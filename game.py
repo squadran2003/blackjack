@@ -31,6 +31,9 @@ class Card:
         self.up = value
 
     def __str__(self):
+        # Consider conditional display based on card visibility
+        if not self.is_up:
+            return "Card face down"
         return f"{self.rank} of {self.suit}"
 
 
@@ -40,6 +43,7 @@ class Deck:
         self.initialise_deck()
 
     def initialise_deck(self):
+        """Create a deck of 52 cards."""
         suits = ["Hearts", "Diamonds", "Clubs", "Spades"]
         ranks = ["Ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "Jack", "Queen", "King"]
         for suit in suits:
@@ -47,14 +51,17 @@ class Deck:
                 card = Card(rank, suit)
                 self.cards.append(card)
 
+    def reset_deck(self):
+        self.cards = []
+        self.initialise_deck()
+
 
 class BasePlayer:
 
-    def __init__(self, name, points=0, turn=False):
+    def __init__(self, name, points=0):
         self.cards = []
         self.name = name
         self.points = points
-        self.turn = turn
 
     def calculate_hand_value(self):
         """Calculate the value of a player's hand, accounting for Aces."""
@@ -73,22 +80,18 @@ class BasePlayer:
             aces -= 1
 
         return total
-
+    
     def hit(self, dealer):
+        """ get a new card from the dealer """
         self.cards.append(dealer.get_card_from_deck())
-        # Check for bust after hitting
-        if self.has_busted:
-            self.turn = False
-            print(f"{self.name} busts with {self.calculate_hand_value()}!")
 
-    @property
     def has_busted(self):
         return self.calculate_hand_value() > 21
 
 
 class Dealer(BasePlayer):
     def __init__(self, name, deck):
-        super().__init__(name,points=0, turn=False)
+        super().__init__(name)
         self.deck = deck
 
     def deal(self, opponents):
@@ -106,6 +109,8 @@ class Dealer(BasePlayer):
                 opponent.cards.append(self.get_card_from_deck())
 
     def get_card_from_deck(self):
+        if not self.deck.cards:
+            raise ValueError("Cannot draw from empty deck, Try reseting the deck")
         return self.deck.cards.pop()
 
     def shuffle_deck(self):
@@ -113,120 +118,154 @@ class Dealer(BasePlayer):
 
 
 class Player(BasePlayer):
-    def __init__(self, name):
-        super().__init__(name, points=0, turn=False)
-        self.bet = 0
+    def __init__(self, name, has_won=False):
+        super().__init__(name)
+        self.bets = []
+        self.has_won = has_won
+        self.balance = 0
+
+    def set_balance(self, amount):
+        self.balance = amount
+
+    def win_bet(self):
+        winnings = self.bets[-1]
+        self.balance += winnings
+        return winnings
+
+    def lose_bet(self):
+        losses = self.bets[-1]
+        self.balance -= losses
+        return losses
 
     def place_bet(self, amount):
-        self.bet += amount
+        self.bets.append(int(amount))
 
-    def stand(self):
-        self.turn = False
-
-    def double_down(self):
-        self.bet *= 2
-        self.hit()
-        self.stand()
+    def clear(self):
+        self.cards = []
+        self.bets = []
 
 
 def help_text():
     return """
     Welcome to black jack game
     To deal a card its d
-    To hold its h
+    To hit its h
     To double down its dd
-    To split its s
+    To stand its s
     To quit its q
     To see the help text its h
 
     """
 
-
-def has_player_won(player, dealer):
-    """
-    player: Player
-    dealer: Dealer
-
-    return tuple: True, bets won, False, bets lost
-    """
-    if player.has_busted:
-        return False, player.bet
-    elif dealer.has_busted:
-        return True, player.bet
-    elif player.calculate_hand_value() > dealer.calculate_hand_value():
-        return True, player.bet
-    else:
-        return False, player.bet
-
 if __name__ == "__main__":
-    deck = Deck()
-    dealer = Dealer("Dealer", deck)
-    dealer.shuffle_deck()
-
-    # Setup players
+    print(help_text())
     players = []
     count = input("Enter the number of players: ")
     for i in range(int(count)):
-        player = Player(input(f"Enter the name of player {i+1}: "))
+        player = Player(input("Enter the name of player {}: ".format(i+1)))
         players.append(player)
-
     playing = True
     while playing:
-        # New round setup
-        dealer.cards = []
-        for player in players:
-            player.cards = []
-            bet = int(input(f"{player.name}, place your bet: "))
-            player.place_bet(bet)
-            player.turn = True
-
-        # Deal cards
+        deck = Deck()
+        dealer = Dealer("Mr obuja", deck)
+        dealer.shuffle_deck()
+        # reset player cards
+        [player.cards.clear() for player in players]
         dealer.deal(players)
-
-        # Show initial hands
-        print("\nDealer shows:", dealer.cards[1])
-
-        # Player turns
         for player in players:
-            print(f"\n{player.name}'s turn:")
-            print(f"Cards: {', '.join(str(card) for card in player.cards)}")
-            print(f"Total: {player.calculate_hand_value()}")
+            print("----------------------------------------------------------------------")
+            balance = input("Enter the balance for player {}: ".format(player.name))
+            player.set_balance(int(balance))
+            print("----------------------------------------------------------------------")
+            bet = input("Enter the bet amount for player {}: ".format(player.name))
+            player.place_bet(bet)
+        # dealer reveals his hidden card
+        print("----------------------------------------------------------------------")
+        dealer.cards[0].is_up = True
+        print("Dealer facedown card is: ", dealer.cards[0])
+        print("Dealer faceup card is: ", dealer.cards[1])
+        print(f"Dealer hand value is {dealer.calculate_hand_value()}")
 
-            while player.turn:
-                action = input("Action (h-hit, s-stand, dd-double down, ?-help, q-quit): ")
-                if action == "h":
+        for player in players:
+            print("----------------------------------------------------------------------")
+            print(f"{player.name} has the following cards")
+            for card in player.cards:
+                print(f"{player.name}: {card}")
+            print(f"{player.name} has a hand value of {player.calculate_hand_value()}")
+            print("Player: ", player.name)
+            action = input("""
+            d to deal
+            s to stand ( keep current hand)
+            h to hit ( take another card )
+            dd to double down ( take exactly one more card )
+            q to quit
+            Enter the action: """)
+            if player.has_busted():
+                print(f"{player.name} has busted")
+                player.has_won = False
+                player.lose_bet()
+                continue
+            if action == "q":
+                break
+            elif action == "h":
+                player.hit(dealer)
+                option = input("Do you want to hit again? y/n: ")
+                while option == "y":
+                    print("----------------------------------------------------------------------")
                     player.hit(dealer)
-                    print(f"Cards: {', '.join(str(card) for card in player.cards)}")
-                    print(f"Total: {player.calculate_hand_value()}")
-                elif action == "s":
-                    player.stand()
-                    print(f"{player.name} stands with {player.calculate_hand_value()}")
-                elif action == "dd":
-                    player.double_down(dealer)
-                    print(f"Doubled down! New bet: {player.bet}")
-                    print(f"Cards: {', '.join(str(card) for card in player.cards)}")
-                    print(f"Total: {player.calculate_hand_value()}")
-                elif action == "?":
-                    print(help_text())
-                elif action == "q":
-                    playing = False
-                    player.turn = False
-        if playing:
-            # Dealer's turn
-            dealer.play_turn()
+                    option = input("Do you want to hit again? y/n: ")
+            elif action == "s":
+                continue
+            elif action == "dd":
+                player.hit(dealer)
+                player.place_bet(player.bets[-1])
+            elif not deck.cards:
+                print("Deck is empty")
+                break
 
-            # Determine winners and update scores
+        dealer_dealing = True
+        while dealer_dealing:
+            if dealer.calculate_hand_value() < 17:
+                dealer.hit(dealer)
+            else:
+                dealer_dealing = False
+        player_value = player.calculate_hand_value()
+        dealer_value = dealer.calculate_hand_value()
+
+        if dealer.has_busted():
+            print(f"{player.name} wins! Dealer busted.")
+            # all players win
             for player in players:
-                won, amount = has_player_won(player, dealer)
-                if won:
-                    print(f"{player.name} wins ${amount}!")
-                    player.points += amount
-                else:
-                    print(f"{player.name} loses ${amount}")
-                    player.points -= amount
-                print(f"{player.name}'s total points: {player.points}")
+                player.has_won = True
+                player.win_bet()
+            # Handle winnings
+        elif player_value > dealer_value:
+            print(f"{player.name} wins with {player_value} vs dealer's {dealer_value}")
+            player.has_won = True
+            player.win_bet()
+            # Handle winnings
+        elif player_value < dealer_value:
+            print(f"{player.name} loses with {player_value} vs dealer's {dealer_value}")
+            player.has_won = False
+            player.lose_bet()
+        else:
+            print(f"{player.name} pushes with dealer at {player_value}")
+        # check if player gets a natural blackjack
+        if player_value == 21 and not dealer_value == 21:
+            print(f"{player.name} has a natural blackjack and has won")
+            player.has_won = True
+        for player in players:
+            if player.has_won:
+                print(f"{player.name} has won the game")
+                print(f"{player.name} has a balance of {player.balance}")
+            else:
+                print(f"{player.name} has lost the game")
+                print(f"{player.name} has a balance of {player.balance}")
+        playing = False
+        option = input("Do you want to play again? y/n: ")
+        if option == "y":
+            playing = True
+        else:
+            break
 
-            # Ask to play another round
-            again = input("\nPlay another round? (y/n): ").lower()
-            if again != 'y':
-                playing = False
+            
